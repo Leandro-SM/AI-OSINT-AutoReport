@@ -1,3 +1,5 @@
 streamlit
 Pillow
 exifread
+markdown
+weasyprint
