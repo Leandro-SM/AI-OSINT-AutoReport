@@ -3,6 +3,10 @@ from PIL import Image
 import exifread
 import hashlib
 import urllib.parse
+from datetime import datetime
+import markdown
+from weasyprint import HTML
+import tempfile
 
 st.set_page_config(
     page_title="OSINT Framework",
@@ -27,13 +31,11 @@ INSECAM_COUNTRIES = {
     "Russia - RU": "ru"
 }
 
-
 def sanitize_cnpj(cnpj):
     return "".join(filter(str.isdigit, cnpj))
 
 def google_search_url(query):
     return f"https://www.google.com/search?q={urllib.parse.quote(query)}"
-
 
 def generate_google_dorks(term):
     quoted_term = f'"{term}"'
@@ -69,13 +71,10 @@ def generate_google_dorks(term):
         ]
     }
 
-
 def dms_to_decimal(dms, ref):
-    """Converte DMS (graus, minutos, segundos) em decimal"""
     degrees = float(dms[0].num) / float(dms[0].den)
     minutes = float(dms[1].num) / float(dms[1].den)
     seconds = float(dms[2].num) / float(dms[2].den)
-
     decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
     if ref in ['S', 'W']:
         decimal = -decimal
@@ -100,30 +99,21 @@ def extract_metadata(uploaded_file):
             uploaded_file.seek(0)
             exif_tags = exifread.process_file(uploaded_file, details=False)
 
-            # Informações principais
-            metadata["EXIF"] = {}
-            metadata["Dispositivo"] = exif_tags.get("Image Make", "Desconhecido")
-            metadata["Modelo"] = exif_tags.get("Image Model", "Desconhecido")
-            metadata["Data da Captura"] = exif_tags.get("EXIF DateTimeOriginal", "Desconhecido")
+            metadata["Dispositivo"] = str(exif_tags.get("Image Make", "Desconhecido"))
+            metadata["Modelo"] = str(exif_tags.get("Image Model", "Desconhecido"))
+            metadata["Data da Captura"] = str(exif_tags.get("EXIF DateTimeOriginal", "Desconhecido"))
 
-            # Localização GPS
             gps_latitude = exif_tags.get("GPS GPSLatitude")
             gps_latitude_ref = exif_tags.get("GPS GPSLatitudeRef")
             gps_longitude = exif_tags.get("GPS GPSLongitude")
             gps_longitude_ref = exif_tags.get("GPS GPSLongitudeRef")
 
             if gps_latitude and gps_latitude_ref and gps_longitude and gps_longitude_ref:
-                try:
-                    lat = dms_to_decimal(gps_latitude.values, gps_latitude_ref.values)
-                    lon = dms_to_decimal(gps_longitude.values, gps_longitude_ref.values)
-                    metadata["GPS"] = {"Latitude": lat, "Longitude": lon}
-                except:
-                    metadata["GPS"] = "Erro ao processar GPS"
+                lat = dms_to_decimal(gps_latitude.values, gps_latitude_ref.values)
+                lon = dms_to_decimal(gps_longitude.values, gps_longitude_ref.values)
+                metadata["GPS"] = {"Latitude": lat, "Longitude": lon}
             else:
                 metadata["GPS"] = "Não disponível"
-
-            # Guardar EXIF completo como fallback
-            metadata["EXIF"]["completo"] = {str(k): str(v) for k, v in exif_tags.items()}
 
     except Exception as e:
         metadata["Erro"] = str(e)
@@ -140,24 +130,54 @@ def calculate_hashes(uploaded_file):
         "SHA256": hashlib.sha256(data).hexdigest()
     }
 
+def generate_markdown_report(metadata, hashes):
+    report = f"""
+# AI-AutoReport
 
-def generate_report(metadata, hashes):
-    report = ["=== AI-AutoReport | Análise Forense ===\n"]
+## Informações da Análise
+- Data: {datetime.now()}
+- Ferramenta: OSINT Framework
 
-    report.append("[Arquivo]")
-    for k, v in metadata.items():
-        report.append(f"{k}: {v}")
+---
 
-    report.append("\n[Hashes]")
-    for k, v in hashes.items():
-        report.append(f"{k}: {v}")
+## Arquivo Analisado
+- Nome: {metadata.get("Nome do Arquivo")}
+- Tipo: {metadata.get("Tipo do Arquivo")}
+- Tamanho: {metadata.get("Tamanho (Bytes)")}
 
-    report.append(
-        "\n[Resumo]\nRelatório gerado automaticamente. "
-        "Validação legal deve ser feita por profissional qualificado."
-    )
+---
 
-    return "\n".join(report)
+## Metadados
+- Dispositivo: {metadata.get("Dispositivo")}
+- Modelo: {metadata.get("Modelo")}
+- Data da captura: {metadata.get("Data da Captura")}
+- Dimensões: {metadata.get("Dimensões")}
+
+---
+
+## GPS
+{metadata.get("GPS")}
+
+---
+
+## Hashes
+- MD5: {hashes["MD5"]}
+- SHA1: {hashes["SHA1"]}
+- SHA256: {hashes["SHA256"]}
+
+---
+
+## Conclusão
+Relatório gerado automaticamente pela ferramenta.
+A validação técnica e legal deve ser realizada por um profissional qualificado.
+"""
+    return report
+
+def markdown_to_pdf(md_text):
+    html = markdown.markdown(md_text)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
+        HTML(string=html).write_pdf(f.name)
+        return f.name
 
 uploaded_file = st.file_uploader(
     "📁 Envie um arquivo para análise",
@@ -170,6 +190,9 @@ tab1, tab2, tab3 = st.tabs([
     "📄 Relatório"
 ])
 
+metadata = None
+hashes = None
+
 with tab1:
     st.subheader("Metadados")
 
@@ -177,14 +200,16 @@ with tab1:
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown("### Metadata")
             metadata = extract_metadata(uploaded_file)
             st.json(metadata, expanded=True)
 
         with col2:
-            st.markdown("### Hashes")
             hashes = calculate_hashes(uploaded_file)
             st.json(hashes)
+
+        if uploaded_file.type.startswith("image"):
+            st.image(uploaded_file)
+
     else:
         st.info("Envie um arquivo para iniciar a análise")
 
@@ -232,23 +257,36 @@ with tab2:
         if len(cnpj) != 14:
             st.error("CNPJ inválido. Informe 14 dígitos.")
         else:
-                st.markdown(
-                    f"[CadastroEmpresa](https://cadastroempresa.com.br/procura?q={cnpj})",
-                    unsafe_allow_html=True
-                )
-
-                st.markdown(
-                    f"[BrasilCNPJ](https://brasilcnpj.net/cnpj/{cnpj})",
-                    unsafe_allow_html=True
-                )
-
-                st.markdown(
-                    f"[Casa dos Dados](https://casadosdados.com.br/solucao/cnpj?q={cnpj})",
-                    unsafe_allow_html=True
-                )
+            st.markdown(f"[CadastroEmpresa](https://cadastroempresa.com.br/procura?q={cnpj})")
+            st.markdown(f"[BrasilCNPJ](https://brasilcnpj.net/cnpj/{cnpj})")
+            st.markdown(f"[Casa dos Dados](https://casadosdados.com.br/solucao/cnpj?q={cnpj})")
 
 with tab3:
     st.header("📄 Relatórios")
-    st.info("[Em Desenvolvimento] Exportação PDF, Geração de Relatórios com IA.")
 
+    if uploaded_file:
+        metadata = extract_metadata(uploaded_file)
+        hashes = calculate_hashes(uploaded_file)
 
+        md_report = generate_markdown_report(metadata, hashes)
+
+        st.download_button(
+            label="Baixar Relatório (.md)",
+            data=md_report,
+            file_name="relatorio_forense.md",
+            mime="text/markdown"
+        )
+
+        if st.button("Gerar PDF"):
+            pdf_path = markdown_to_pdf(md_report)
+
+            with open(pdf_path, "rb") as f:
+                st.download_button(
+                    label="Baixar Relatório (.pdf)",
+                    data=f,
+                    file_name="relatorio_forense.pdf",
+                    mime="application/pdf"
+                )
+
+    else:
+        st.info("Realize uma análise para gerar o relatório.")
