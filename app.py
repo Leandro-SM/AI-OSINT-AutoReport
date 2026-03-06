@@ -7,6 +7,10 @@ from datetime import datetime
 import markdown
 from weasyprint import HTML
 import tempfile
+import requests
+
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL = "llama3"
 
 st.set_page_config(
     page_title="OSINT Framework",
@@ -30,6 +34,17 @@ INSECAM_COUNTRIES = {
     "Japan - JP": "jp",
     "Russia - RU": "ru"
 }
+
+def ask_ai(prompt):
+
+    payload = {
+        "model": MODEL,
+        "prompt": prompt,
+        "stream": False
+    }
+
+    r = requests.post(OLLAMA_URL, json=payload)
+    return r.json()["response"]
 
 def sanitize_cnpj(cnpj):
     return "".join(filter(str.isdigit, cnpj))
@@ -81,6 +96,7 @@ def dms_to_decimal(dms, ref):
     return decimal
 
 def extract_metadata(uploaded_file):
+
     metadata = {
         "Nome do Arquivo": uploaded_file.name,
         "Tipo do Arquivo": uploaded_file.type,
@@ -89,6 +105,7 @@ def extract_metadata(uploaded_file):
 
     try:
         if uploaded_file.type.startswith("image"):
+
             uploaded_file.seek(0)
             image = Image.open(uploaded_file)
 
@@ -109,18 +126,23 @@ def extract_metadata(uploaded_file):
             gps_longitude_ref = exif_tags.get("GPS GPSLongitudeRef")
 
             if gps_latitude and gps_latitude_ref and gps_longitude and gps_longitude_ref:
+
                 lat = dms_to_decimal(gps_latitude.values, gps_latitude_ref.values)
                 lon = dms_to_decimal(gps_longitude.values, gps_longitude_ref.values)
+
                 metadata["GPS"] = {"Latitude": lat, "Longitude": lon}
+
             else:
                 metadata["GPS"] = "Não disponível"
 
     except Exception as e:
+
         metadata["Erro"] = str(e)
 
     return metadata
 
 def calculate_hashes(uploaded_file):
+
     uploaded_file.seek(0)
     data = uploaded_file.read()
 
@@ -130,7 +152,31 @@ def calculate_hashes(uploaded_file):
         "SHA256": hashlib.sha256(data).hexdigest()
     }
 
-def generate_markdown_report(metadata, hashes):
+def ai_forensic_analysis(metadata, hashes):
+
+    prompt = f"""
+Você é um analista forense digital.
+
+Analise os metadados e hashes abaixo e gere um relatório investigativo.
+
+Metadados:
+{metadata}
+
+Hashes:
+{hashes}
+
+Forneça:
+
+1 Possível origem do arquivo
+2 Riscos potenciais
+3 Indicadores relevantes
+4 Recomendações de investigação
+"""
+
+    return ask_ai(prompt)
+
+def generate_markdown_report(metadata, hashes, ai_analysis):
+
     report = f"""
 # AI-AutoReport
 
@@ -167,14 +213,22 @@ def generate_markdown_report(metadata, hashes):
 
 ---
 
+## Análise por IA
+{ai_analysis}
+
+---
+
 ## Conclusão
 Relatório gerado automaticamente pela ferramenta.
 A validação técnica e legal deve ser realizada por um profissional qualificado.
 """
+
     return report
 
 def markdown_to_pdf(md_text):
+
     html = markdown.markdown(md_text)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
         HTML(string=html).write_pdf(f.name)
         return f.name
@@ -192,28 +246,43 @@ tab1, tab2, tab3 = st.tabs([
 
 metadata = None
 hashes = None
+ai_analysis = None
 
 with tab1:
+
     st.subheader("Metadados")
 
     if uploaded_file:
+
         col1, col2 = st.columns(2)
 
         with col1:
+
             metadata = extract_metadata(uploaded_file)
             st.json(metadata, expanded=True)
 
         with col2:
+
             hashes = calculate_hashes(uploaded_file)
             st.json(hashes)
 
         if uploaded_file.type.startswith("image"):
             st.image(uploaded_file)
 
+        if st.button("Executar análise com IA"):
+
+            with st.spinner("Analisando..."):
+
+                ai_analysis = ai_forensic_analysis(metadata, hashes)
+
+            st.subheader("Análise IA")
+            st.write(ai_analysis)
+
     else:
         st.info("Envie um arquivo para iniciar a análise")
 
 with tab2:
+
     st.subheader("Busca - Google Dorks")
 
     search_term = st.text_input(
@@ -222,14 +291,18 @@ with tab2:
     )
 
     if search_term:
+
         dorks = generate_google_dorks(search_term)
 
         for category, queries in dorks.items():
+
             with st.expander(category):
+
                 for q in queries:
                     st.markdown(f"- [{q}]({google_search_url(q)})")
 
     st.divider()
+
     st.subheader("Câmeras")
 
     selected_country = st.selectbox(
@@ -238,12 +311,15 @@ with tab2:
     )
 
     if selected_country:
+
         code = INSECAM_COUNTRIES[selected_country]
+
         st.markdown(
             f"🔗 [Acessar Insecam – {selected_country}](http://www.insecam.org/en/bycountry/{code}/)"
         )
 
     st.divider()
+
     st.subheader("Busca por CNPJ")
 
     cnpj_input = st.text_input(
@@ -252,23 +328,33 @@ with tab2:
     )
 
     if cnpj_input:
+
         cnpj = sanitize_cnpj(cnpj_input)
 
         if len(cnpj) != 14:
+
             st.error("CNPJ inválido. Informe 14 dígitos.")
+
         else:
+
             st.markdown(f"[CadastroEmpresa](https://cadastroempresa.com.br/procura?q={cnpj})")
             st.markdown(f"[BrasilCNPJ](https://brasilcnpj.net/cnpj/{cnpj})")
             st.markdown(f"[Casa dos Dados](https://casadosdados.com.br/solucao/cnpj?q={cnpj})")
 
 with tab3:
+
     st.header("📄 Relatórios")
 
     if uploaded_file:
+
         metadata = extract_metadata(uploaded_file)
         hashes = calculate_hashes(uploaded_file)
 
-        md_report = generate_markdown_report(metadata, hashes)
+        if ai_analysis is None:
+
+            ai_analysis = ai_forensic_analysis(metadata, hashes)
+
+        md_report = generate_markdown_report(metadata, hashes, ai_analysis)
 
         st.download_button(
             label="Baixar Relatório (.md)",
@@ -278,9 +364,11 @@ with tab3:
         )
 
         if st.button("Gerar PDF"):
+
             pdf_path = markdown_to_pdf(md_report)
 
             with open(pdf_path, "rb") as f:
+
                 st.download_button(
                     label="Baixar Relatório (.pdf)",
                     data=f,
@@ -289,4 +377,5 @@ with tab3:
                 )
 
     else:
+
         st.info("Realize uma análise para gerar o relatório.")
