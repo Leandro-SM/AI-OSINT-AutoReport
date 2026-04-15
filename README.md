@@ -19,4 +19,4 @@ Streamlit | Pillow | ExifRead | Ollama/Llama 3 | WeasyPrint
 ![img03](img/osint-03.png)
 
 ---
-**(Relatório com IA em desenvolvimento)**
+**(Relatório com IA e outras análises de arquivo em desenvolvimento)**
