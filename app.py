@@ -137,35 +137,45 @@ def calculate_hashes(uploaded_file):
 
 def generate_markdown_report(metadata, hashes):
 
-    report = f"""
-Relatório Forense
+    return f"""
+# Relatório Forense
 
-Data: {datetime.now()}
+## Informações da Análise
+- Data: {datetime.now()}
+- Ferramenta: OSINT Framework
 
-Arquivo:
-Nome: {metadata.get("Nome do Arquivo")}
-Tipo: {metadata.get("Tipo do Arquivo")}
-Tamanho: {metadata.get("Tamanho (Bytes)")}
+---
 
-Metadados:
-Dispositivo: {metadata.get("Dispositivo")}
-Modelo: {metadata.get("Modelo")}
-Data da captura: {metadata.get("Data da Captura")}
-Dimensões: {metadata.get("Dimensões")}
+## Arquivo Analisado
+- Nome: {metadata.get("Nome do Arquivo")}
+- Tipo: {metadata.get("Tipo do Arquivo")}
+- Tamanho: {metadata.get("Tamanho (Bytes)")}
 
-GPS:
+---
+
+## Metadados
+- Dispositivo: {metadata.get("Dispositivo")}
+- Modelo: {metadata.get("Modelo")}
+- Data da captura: {metadata.get("Data da Captura")}
+- Dimensões: {metadata.get("Dimensões")}
+
+---
+
+## GPS
 {metadata.get("GPS")}
 
-Hashes:
-MD5: {hashes["MD5"]}
-SHA1: {hashes["SHA1"]}
-SHA256: {hashes["SHA256"]}
+---
 
-Observações:
+## Hashes
+- MD5: {hashes["MD5"]}
+- SHA1: {hashes["SHA1"]}
+- SHA256: {hashes["SHA256"]}
+
+---
+
+## Observações
 Relatório gerado automaticamente.
 """
-
-    return report
 
 def markdown_to_pdf(md_text):
 
@@ -174,16 +184,14 @@ def markdown_to_pdf(md_text):
     pdf.set_auto_page_break(auto=True, margin=10)
     pdf.set_font("Arial", size=12)
 
-    lines = md_text.split("\n")
+    for line in md_text.split("\n"):
+        clean = line.replace("#", "").replace("**", "")
+        pdf.multi_cell(0, 8, clean)
 
-    for line in lines:
-        clean_line = line.replace("#", "").replace("**", "")
-        pdf.multi_cell(0, 8, clean_line)
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    pdf.output(temp.name)
 
-    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    pdf.output(temp_file.name)
-
-    return temp_file.name
+    return temp.name
 
 uploaded_file = st.file_uploader(
     "📁 Envie um arquivo para análise",
@@ -199,6 +207,7 @@ tab1, tab2, tab3 = st.tabs([
 metadata = None
 hashes = None
 
+# ---------------- TAB 1 ----------------
 with tab1:
 
     st.subheader("Metadados")
@@ -221,11 +230,15 @@ with tab1:
     else:
         st.info("Envie um arquivo para iniciar a análise")
 
+# ---------------- TAB 2 (UX ORIGINAL PRESERVADA) ----------------
 with tab2:
 
     st.subheader("Busca - Google Dorks")
 
-    search_term = st.text_input("Termo de busca")
+    search_term = st.text_input(
+        "Termo de busca",
+        placeholder="Nome, e-mail, domínio, empresa"
+    )
 
     if search_term:
 
@@ -240,25 +253,45 @@ with tab2:
 
     st.divider()
 
-    selected_country = st.selectbox("Câmeras", list(INSECAM_COUNTRIES.keys()))
+    st.subheader("Câmeras")
+
+    selected_country = st.selectbox(
+        "Selecione o país",
+        list(INSECAM_COUNTRIES.keys())
+    )
 
     if selected_country:
+
         code = INSECAM_COUNTRIES[selected_country]
-        st.markdown(f"[Acessar Insecam](http://www.insecam.org/en/bycountry/{code}/)")
+
+        st.markdown(
+            f"🔗 [Acessar Insecam – {selected_country}](http://www.insecam.org/en/bycountry/{code}/)"
+        )
 
     st.divider()
 
-    cnpj_input = st.text_input("CNPJ")
+    st.subheader("Busca por CNPJ")
+
+    cnpj_input = st.text_input(
+        "Informe o CNPJ",
+        placeholder="00.000.000/0000-00"
+    )
 
     if cnpj_input:
 
         cnpj = sanitize_cnpj(cnpj_input)
 
-        if len(cnpj) == 14:
-            st.markdown(f"https://cadastroempresa.com.br/procura?q={cnpj}")
-        else:
-            st.error("CNPJ inválido")
+        if len(cnpj) != 14:
 
+            st.error("CNPJ inválido. Informe 14 dígitos.")
+
+        else:
+
+            st.markdown(f"[CadastroEmpresa](https://cadastroempresa.com.br/procura?q={cnpj})")
+            st.markdown(f"[BrasilCNPJ](https://brasilcnpj.net/cnpj/{cnpj})")
+            st.markdown(f"[Casa dos Dados](https://casadosdados.com.br/solucao/cnpj?q={cnpj})")
+
+# ---------------- TAB 3 ----------------
 with tab3:
 
     st.header("📄 Relatórios")
@@ -271,9 +304,10 @@ with tab3:
         md_report = generate_markdown_report(metadata, hashes)
 
         st.download_button(
-            "Baixar .md",
-            md_report,
-            "relatorio.md"
+            label="Baixar Relatório (.md)",
+            data=md_report,
+            file_name="relatorio_forense.md",
+            mime="text/markdown"
         )
 
         if st.button("Gerar PDF"):
@@ -281,11 +315,13 @@ with tab3:
             pdf_path = markdown_to_pdf(md_report)
 
             with open(pdf_path, "rb") as f:
+
                 st.download_button(
-                    "Baixar PDF",
-                    f,
-                    "relatorio.pdf"
+                    label="Baixar Relatório (.pdf)",
+                    data=f,
+                    file_name="relatorio_forense.pdf",
+                    mime="application/pdf"
                 )
 
     else:
-        st.info("Envie um arquivo para gerar relatório")
+        st.info("Realize uma análise para gerar o relatório.")
