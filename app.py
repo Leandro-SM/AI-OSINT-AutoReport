@@ -5,12 +5,8 @@ import hashlib
 import urllib.parse
 from datetime import datetime
 import markdown
-#from weasyprint import HTML
+from weasyprint import HTML
 import tempfile
-import requests
-
-OLLAMA_URL = "http://localhost:11434/api/generate"
-MODEL = "llama3"
 
 st.set_page_config(
     page_title="OSINT Framework",
@@ -34,17 +30,6 @@ INSECAM_COUNTRIES = {
     "Japan - JP": "jp",
     "Russia - RU": "ru"
 }
-
-def ask_ai(prompt):
-
-    payload = {
-        "model": MODEL,
-        "prompt": prompt,
-        "stream": False
-    }
-
-    r = requests.post(OLLAMA_URL, json=payload)
-    return r.json()["response"]
 
 def sanitize_cnpj(cnpj):
     return "".join(filter(str.isdigit, cnpj))
@@ -136,7 +121,6 @@ def extract_metadata(uploaded_file):
                 metadata["GPS"] = "Não disponível"
 
     except Exception as e:
-
         metadata["Erro"] = str(e)
 
     return metadata
@@ -152,33 +136,10 @@ def calculate_hashes(uploaded_file):
         "SHA256": hashlib.sha256(data).hexdigest()
     }
 
-def ai_forensic_analysis(metadata, hashes):
-
-    prompt = f"""
-Você é um analista forense digital.
-
-Analise os metadados e hashes abaixo e gere um relatório investigativo.
-
-Metadados:
-{metadata}
-
-Hashes:
-{hashes}
-
-Forneça:
-
-1 Possível origem do arquivo
-2 Riscos potenciais
-3 Indicadores relevantes
-4 Recomendações de investigação
-"""
-
-    return ask_ai(prompt)
-
-def generate_markdown_report(metadata, hashes, ai_analysis):
+def generate_markdown_report(metadata, hashes):
 
     report = f"""
-# AI-AutoReport
+# Relatório Forense
 
 ## Informações da Análise
 - Data: {datetime.now()}
@@ -213,24 +174,34 @@ def generate_markdown_report(metadata, hashes, ai_analysis):
 
 ---
 
-## Análise por IA
-{ai_analysis}
-
----
-
-## Conclusão
-Relatório gerado automaticamente pela ferramenta.
-A validação técnica e legal deve ser realizada por um profissional qualificado.
+## Observações
+Este relatório foi gerado automaticamente com base nos metadados extraídos.
+A análise técnica deve ser validada por um especialista.
 """
 
     return report
 
 def markdown_to_pdf(md_text):
 
-    html = markdown.markdown(md_text)
+    html_content = markdown.markdown(md_text)
+
+    full_html = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            h1, h2, h3 {{ color: #333; }}
+        </style>
+    </head>
+    <body>
+    {html_content}
+    </body>
+    </html>
+    """
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
-        HTML(string=html).write_pdf(f.name)
+        HTML(string=full_html).write_pdf(f.name)
         return f.name
 
 uploaded_file = st.file_uploader(
@@ -246,7 +217,6 @@ tab1, tab2, tab3 = st.tabs([
 
 metadata = None
 hashes = None
-ai_analysis = None
 
 with tab1:
 
@@ -257,26 +227,15 @@ with tab1:
         col1, col2 = st.columns(2)
 
         with col1:
-
             metadata = extract_metadata(uploaded_file)
             st.json(metadata, expanded=True)
 
         with col2:
-
             hashes = calculate_hashes(uploaded_file)
             st.json(hashes)
 
         if uploaded_file.type.startswith("image"):
             st.image(uploaded_file)
-
-        if st.button("Executar análise com IA"):
-
-            with st.spinner("Analisando..."):
-
-                ai_analysis = ai_forensic_analysis(metadata, hashes)
-
-            st.subheader("Análise IA")
-            st.write(ai_analysis)
 
     else:
         st.info("Envie um arquivo para iniciar a análise")
@@ -332,11 +291,8 @@ with tab2:
         cnpj = sanitize_cnpj(cnpj_input)
 
         if len(cnpj) != 14:
-
             st.error("CNPJ inválido. Informe 14 dígitos.")
-
         else:
-
             st.markdown(f"[CadastroEmpresa](https://cadastroempresa.com.br/procura?q={cnpj})")
             st.markdown(f"[BrasilCNPJ](https://brasilcnpj.net/cnpj/{cnpj})")
             st.markdown(f"[Casa dos Dados](https://casadosdados.com.br/solucao/cnpj?q={cnpj})")
@@ -350,11 +306,7 @@ with tab3:
         metadata = extract_metadata(uploaded_file)
         hashes = calculate_hashes(uploaded_file)
 
-        if ai_analysis is None:
-
-            ai_analysis = ai_forensic_analysis(metadata, hashes)
-
-        md_report = generate_markdown_report(metadata, hashes, ai_analysis)
+        md_report = generate_markdown_report(metadata, hashes)
 
         st.download_button(
             label="Baixar Relatório (.md)",
@@ -377,5 +329,4 @@ with tab3:
                 )
 
     else:
-
         st.info("Realize uma análise para gerar o relatório.")
