@@ -2,5 +2,4 @@ streamlit
 pillow
 exifread
 markdown
-requests
-fpdf
+weasyprint
