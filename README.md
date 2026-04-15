@@ -14,7 +14,7 @@ Ferramenta para análise forense, Google Dorks e investigação de dados públic
 ![img02](img/osint-02.png)
 
   🛠️ Tecnologias
-Streamlit | Pillow | ExifRead | Ollama/Llama 3 | WeasyPrint
+Streamlit | Pillow | ExifRead | fPdf
 
 ![img03](img/osint-03.png)
 
