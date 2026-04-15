@@ -4,9 +4,8 @@ import exifread
 import hashlib
 import urllib.parse
 from datetime import datetime
-import markdown
-from weasyprint import HTML
 import tempfile
+from fpdf import FPDF
 
 st.set_page_config(
     page_title="OSINT Framework",
@@ -139,70 +138,52 @@ def calculate_hashes(uploaded_file):
 def generate_markdown_report(metadata, hashes):
 
     report = f"""
-# Relatório Forense
+Relatório Forense
 
-## Informações da Análise
-- Data: {datetime.now()}
-- Ferramenta: OSINT Framework
+Data: {datetime.now()}
 
----
+Arquivo:
+Nome: {metadata.get("Nome do Arquivo")}
+Tipo: {metadata.get("Tipo do Arquivo")}
+Tamanho: {metadata.get("Tamanho (Bytes)")}
 
-## Arquivo Analisado
-- Nome: {metadata.get("Nome do Arquivo")}
-- Tipo: {metadata.get("Tipo do Arquivo")}
-- Tamanho: {metadata.get("Tamanho (Bytes)")}
+Metadados:
+Dispositivo: {metadata.get("Dispositivo")}
+Modelo: {metadata.get("Modelo")}
+Data da captura: {metadata.get("Data da Captura")}
+Dimensões: {metadata.get("Dimensões")}
 
----
-
-## Metadados
-- Dispositivo: {metadata.get("Dispositivo")}
-- Modelo: {metadata.get("Modelo")}
-- Data da captura: {metadata.get("Data da Captura")}
-- Dimensões: {metadata.get("Dimensões")}
-
----
-
-## GPS
+GPS:
 {metadata.get("GPS")}
 
----
+Hashes:
+MD5: {hashes["MD5"]}
+SHA1: {hashes["SHA1"]}
+SHA256: {hashes["SHA256"]}
 
-## Hashes
-- MD5: {hashes["MD5"]}
-- SHA1: {hashes["SHA1"]}
-- SHA256: {hashes["SHA256"]}
-
----
-
-## Observações
-Este relatório foi gerado automaticamente com base nos metadados extraídos.
-A análise técnica deve ser validada por um especialista.
+Observações:
+Relatório gerado automaticamente.
 """
 
     return report
 
 def markdown_to_pdf(md_text):
 
-    html_content = markdown.markdown(md_text)
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=10)
+    pdf.set_font("Arial", size=12)
 
-    full_html = f"""
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; }}
-            h1, h2, h3 {{ color: #333; }}
-        </style>
-    </head>
-    <body>
-    {html_content}
-    </body>
-    </html>
-    """
+    lines = md_text.split("\n")
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
-        HTML(string=full_html).write_pdf(f.name)
-        return f.name
+    for line in lines:
+        clean_line = line.replace("#", "").replace("**", "")
+        pdf.multi_cell(0, 8, clean_line)
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    pdf.output(temp_file.name)
+
+    return temp_file.name
 
 uploaded_file = st.file_uploader(
     "📁 Envie um arquivo para análise",
@@ -244,10 +225,7 @@ with tab2:
 
     st.subheader("Busca - Google Dorks")
 
-    search_term = st.text_input(
-        "Termo de busca",
-        placeholder="Nome, e-mail, domínio, empresa"
-    )
+    search_term = st.text_input("Termo de busca")
 
     if search_term:
 
@@ -262,40 +240,24 @@ with tab2:
 
     st.divider()
 
-    st.subheader("Câmeras")
-
-    selected_country = st.selectbox(
-        "Selecione o país",
-        list(INSECAM_COUNTRIES.keys())
-    )
+    selected_country = st.selectbox("Câmeras", list(INSECAM_COUNTRIES.keys()))
 
     if selected_country:
-
         code = INSECAM_COUNTRIES[selected_country]
-
-        st.markdown(
-            f"🔗 [Acessar Insecam – {selected_country}](http://www.insecam.org/en/bycountry/{code}/)"
-        )
+        st.markdown(f"[Acessar Insecam](http://www.insecam.org/en/bycountry/{code}/)")
 
     st.divider()
 
-    st.subheader("Busca por CNPJ")
-
-    cnpj_input = st.text_input(
-        "Informe o CNPJ",
-        placeholder="00.000.000/0000-00"
-    )
+    cnpj_input = st.text_input("CNPJ")
 
     if cnpj_input:
 
         cnpj = sanitize_cnpj(cnpj_input)
 
-        if len(cnpj) != 14:
-            st.error("CNPJ inválido. Informe 14 dígitos.")
+        if len(cnpj) == 14:
+            st.markdown(f"https://cadastroempresa.com.br/procura?q={cnpj}")
         else:
-            st.markdown(f"[CadastroEmpresa](https://cadastroempresa.com.br/procura?q={cnpj})")
-            st.markdown(f"[BrasilCNPJ](https://brasilcnpj.net/cnpj/{cnpj})")
-            st.markdown(f"[Casa dos Dados](https://casadosdados.com.br/solucao/cnpj?q={cnpj})")
+            st.error("CNPJ inválido")
 
 with tab3:
 
@@ -309,10 +271,9 @@ with tab3:
         md_report = generate_markdown_report(metadata, hashes)
 
         st.download_button(
-            label="Baixar Relatório (.md)",
-            data=md_report,
-            file_name="relatorio_forense.md",
-            mime="text/markdown"
+            "Baixar .md",
+            md_report,
+            "relatorio.md"
         )
 
         if st.button("Gerar PDF"):
@@ -320,13 +281,11 @@ with tab3:
             pdf_path = markdown_to_pdf(md_report)
 
             with open(pdf_path, "rb") as f:
-
                 st.download_button(
-                    label="Baixar Relatório (.pdf)",
-                    data=f,
-                    file_name="relatorio_forense.pdf",
-                    mime="application/pdf"
+                    "Baixar PDF",
+                    f,
+                    "relatorio.pdf"
                 )
 
     else:
-        st.info("Realize uma análise para gerar o relatório.")
+        st.info("Envie um arquivo para gerar relatório")
